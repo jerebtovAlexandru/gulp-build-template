@@ -1,53 +1,83 @@
-import dartSass from "sass";
+// Импорт компилятора Dart Sass для превращения SCSS-кода в стандартный CSS
+import * as dartSass from "sass";
+// Импорт Gulp-плагина для интеграции Sass в поток сборки
 import gulpSass from "gulp-sass";
-import rename from 'gulp-rename';
+// Импорт плагина для изменения расширения или имени итогового файла
+import rename from "gulp-rename";
 
-import cleanCss from 'gulp-clean-css'; // Сжатие CSS файла.
-import webpcss from 'gulp-webpcss'; // Вывод WEBP изображений.
-import autoprefixer from 'gulp-autoprefixer'; // Добавление вендорных префиксов.
-import groupCssMediaQueries from 'gulp-group-css-media-queries'; // Группировка медиа запросов.
+// Импорт плагина для минификации и оптимизации готового CSS-кода
+import cleanCss from "gulp-clean-css";
+// Импорт плагина для автоматического добавления классов поддержки WebP-изображений в CSS-правила background-image
+import webpcss from "gulp-webpcss";
+// Импорт плагина для автоматической простановки вендорных префиксов (например, -webkit-) под старые браузеры
+import autoprefixer from "gulp-autoprefixer";
+// Импорт плагина для сбора всех разрозненных медиа-запросов (@media) и объединения их в конце CSS-файла
+import groupCssMediaQueries from "gulp-group-css-media-queries";
 
-
-
+// Инициализация плагина gulp-sass с использованием компилятора dartSass
 const sass = gulpSass(dartSass);
 
+// Экспорт именованной функции-задачи для обработки SCSS/SASS стилей
 export const scss = () => {
-  return app.gulp
-    .src(app.path.src.scss, { sourcemaps: true })
-    .pipe(
-      app.plugins.plumber(
-        app.plugins.notify.onError({
-          title: "SCSS",
-          message: "Error:<%=error.message %>",
+  // Возврат потока файлов Gulp для контроля выполнения асинхронного таска
+  return (
+    app.gulp
+      // Получение исходных SCSS-файлов с опцией генерации sourcemaps (карт кода) только в режиме разработки (app.isDev)
+      .src(app.path.src.scss, { sourcemaps: app.isDev })
+      // Подключение плагина plumber для перехвата и изоляции ошибок компиляции без остановки работы всего Gulp
+      .pipe(
+        app.plugins.plumber(
+          // Настройка всплывающих системных окон для красивого вывода ошибок верстки
+          app.plugins.notify.onError({
+            title: "SCSS", // Заголовок всплывающего уведомления
+            message: "Error:<%=error.message %>", // Вывод сообщения о конкретной ошибке (например, о пропущенной точке с запятой)
+          }),
+        ),
+      )
+      // Поиск регулярным выражением алиаса '@img/' в стилях и автоматическая замена его на корректный относительный путь к картинкам
+      .pipe(app.plugins.replace(/@img\//g, "../img/"))
+      // Компиляция SCSS в CSS с форматированием выходного файла в развернутый, удобочитаемый вид
+      .pipe(
+        sass({
+          outputStyle: "expanded",
         }),
-      ),
-    )
-    .pipe(app.plugins.replace(/@img\//g, "../img/"))
-    .pipe(
-      sass({
-        outputStyle: "expanded",
-      }),
-    )
-    .pipe(groupCssMediaQueries())
-    .pipe(
-      webpcss({
-        webpClass: ".webp",
-        noWebpClass: ".no-webp",
-      }),
-    )
-      .pipe(autoprefixer({
-          grid: true,
-          overrideBrowserslist: ['last 3 version'],
-          cascade : true
-      }))
-      // Раскомментировать если нужен не сжатый дубль файла стилей 
+      )
+      // Если запущен режим сборки продакшена (app.isBuild), группируем все медиа-запросы вместе для оптимизации структуры кода
+      .pipe(app.plugins.if(app.isBuild, groupCssMediaQueries()))
+      // Если запущен режим продакшена, настраиваем обертку для фоновых картинок под WebP-формат
+      .pipe(
+        app.plugins.if(
+          app.isBuild,
+          webpcss({
+            webpClass: ".webp", // Класс, который добавит JS, если браузер поддерживает формат WebP
+            noWebpClass: ".no-webp", // Класс, который добавит JS, если браузер НЕ поддерживает формат WebP
+          }),
+        ),
+      )
+      // Если запущен режим продакшена, автоматически добавляем вендорные префиксы
+      .pipe(
+        app.plugins.if(
+          app.isBuild,
+          autoprefixer({
+            grid: true, // Включение поддержки старого синтаксиса Grid Layout для IE/Edge
+            overrideBrowserslist: ["last 3 version"], // Поддержка последних трех версий всех популярных браузеров
+            cascade: true, // Форматирование префиксов каскадом (красивое выравнивание колонок свойств в файле)
+          }),
+        ),
+      )
+      // Строка ниже закомментирована. Если её включить, то в папку назначения запишется обычный не сжатый style.css
       // .pipe(app.gulp.dest(app.path.build.css))
+      // Запуск процесса сжатия и минификации CSS-кода (удаление пробелов, переносов, комментариев)
       .pipe(cleanCss())
-    .pipe(
-      rename({
-        extname: ".min.css",
-      }),
-    )
-    .pipe(app.gulp.dest(app.path.build.css))
-    .pipe(app.plugins.browsersync.stream());
+      // Переименование итогового сжатого файла: замена текущего расширения на .min.css (например, style.min.css)
+      .pipe(
+        rename({
+          extname: ".min.css",
+        }),
+      )
+      // Сохранение готового минифицированного CSS-файла стилей в папку назначения в дистрибутиве
+      .pipe(app.gulp.dest(app.path.build.css))
+      // Отправка обновленных стилей в поток сервера BrowserSync для мгновенного обновления дизайна на странице без перезагрузки вкладки
+      .pipe(app.plugins.browsersync.stream())
+  );
 };
